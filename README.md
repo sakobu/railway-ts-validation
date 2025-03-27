@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Bundle Size](https://img.shields.io/bundlephobia/minzip/@railway-ts/validation)](https://bundlephobia.com/package/@railway-ts/validation)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue)](https://www.typescriptlang.org/)
+[![Coverage](https://img.shields.io/codecov/c/github/sakobu/railway-ts-validation)](https://codecov.io/gh/sakobu/railway-ts-validation)
 
 A functional validation library for TypeScript built on top of [@railway-ts/core](https://github.com/sakobu/railway-ts).
 
