@@ -1,4 +1,4 @@
-import { type Result, err, ok, flatMap, combine, combineAll } from "@railway-ts/core/result";
+import { type Result, ok, err, combine, combineAll, flatMap } from "@railway-ts/core/result";
 
 /**
  * Combines multiple validation results into a single Result.
@@ -17,11 +17,11 @@ import { type Result, err, ok, flatMap, combine, combineAll } from "@railway-ts/
  * @param results - An array of validation results
  * @returns A Result containing an array of validated values or the first error
  */
-export function combineValidation<T extends unknown[], E>(
+export const combineValidation = <T extends unknown[], E>(
   results: readonly [...{ [K in keyof T]: Result<T[K], E> }],
-): Result<T, E> {
+): Result<T, E> => {
   return combine(results as Result<unknown, E>[]) as Result<T, E>;
-}
+};
 
 /**
  * Combines multiple validation results into a single Result.
@@ -41,11 +41,11 @@ export function combineValidation<T extends unknown[], E>(
  * @param results - An array of validation results
  * @returns A Result containing an array of validated values or all collected errors
  */
-export function combineAllValidations<T extends unknown[], E>(
+export const combineAllValidations = <T extends unknown[], E>(
   results: readonly [...{ [K in keyof T]: Result<T[K], E> }],
-): Result<T, E[]> {
+): Result<T, E[]> => {
   return combineAll(results as Result<unknown, E>[]) as Result<T, E[]>;
-}
+};
 
 /**
  * Combines field validation results into a single Result.
@@ -73,22 +73,28 @@ export type FieldValidationError<E> = {
   error: E;
 };
 
-export function combineFormValidations<T extends Record<string, unknown>, E>(validations: {
+export const combineFormValidations = <T extends Record<string, unknown>, E>(validations: {
   [K in keyof T]: Result<T[K], E>;
-}): Result<T, FieldValidationError<E>[]> {
+}): Result<T, FieldValidationError<E>[]> => {
   const errors: FieldValidationError<E>[] = [];
   const values: Partial<T> = {};
 
-  for (const [field, result] of Object.entries(validations)) {
+  // Iterate over keys to maintain type safety
+  for (const key of Object.keys(validations)) {
+    const field = key as keyof T;
+    // eslint-disable-next-line security/detect-object-injection
+    const result = validations[field];
+
     if (result.ok) {
-      values[field as keyof T] = result.value;
+      // eslint-disable-next-line security/detect-object-injection
+      values[field] = result.value;
     } else {
-      errors.push({ field, error: result.error });
+      errors.push({ field: key, error: result.error });
     }
   }
 
   return errors.length > 0 ? err(errors) : ok(values as T);
-}
+};
 
 /**
  * Curried version of `flatMap` from @/result.

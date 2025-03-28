@@ -194,6 +194,14 @@ match(fieldResult, {
 | --------------------------------------- | -------------------------------------------- |
 | `dateRange(minDate, maxDate, message?)` | Validates a date is within a specified range |
 
+### Conditional Validators
+
+| Function                       | Description                                           |
+| ------------------------------ | ----------------------------------------------------- |
+| `optional(validator)`          | Only applies validator if value is not null/undefined |
+| `optionalTransform(validator)` | Handles transformations for optional values           |
+| `withDefault(defaultValue)`    | Provides a default value if input is null/undefined   |
+
 ### Utility Functions
 
 | Function                              | Description                              |
@@ -210,7 +218,7 @@ match(fieldResult, {
 ```typescript
 import { ok } from "@railway-ts/core/result";
 import { pipe } from "@railway-ts/core/utils";
-import { required, minLength, matches, equals, andThen } from "@railway-ts/validation";
+import { required, minLength, matches, equals, optional, isUrl, custom, andThen } from "@railway-ts/validation";
 
 const validatePassword = (password: string) => {
   return pipe(
@@ -229,6 +237,14 @@ const validatePasswordConfirmation = (password: string, confirmation: string) =>
     andThen(required("Please confirm your password")),
     andThen(equals(password, "Passwords do not match")),
   );
+
+  const validateWebsite = (url: string | undefined) => {
+    return pipe(
+      ok<string | undefined, string>(url),
+      andThen(optional(isUrl("Please enter a valid URL"))),
+      andThen(optional(custom((url) => !url.includes("example.com"), "Example domains are not allowed"))),
+    );
+  };
 };
 ```
 
@@ -258,7 +274,7 @@ const validateForm = (formData: FormData) => {
     age: validateAge(age),
     password: validatePassword(password),
     passwordConfirmation: validatePasswordConfirmation(password, passwordConfirmation),
-    ...(website ? { website: validateWebsite(website) } : {}),
+    website: validateWebsite(website),
     role: validateRole(role),
     termsAccepted: validateTermsAccepted(termsAccepted),
   });
@@ -271,7 +287,7 @@ const formResult = validateForm({
   age: "25",
   password: "Password123",
   passwordConfirmation: "Password123",
-  website: "https://johnsblog.com",
+  website: "https://johnsblog.com", // Optional value
   role: "editor",
   termsAccepted: "yes",
 });

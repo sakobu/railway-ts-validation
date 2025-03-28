@@ -29,6 +29,9 @@ import {
   validateArray,
   dateRange,
   andThen,
+  optional,
+  optionalTransform,
+  withDefault,
 } from "@/index";
 
 // Helper function to create a success result with a value
@@ -531,5 +534,91 @@ describe("Validator composition", () => {
     expectError(validateAge("17"), "Age must be between 18 and 120");
     expectError(validateAge("121"), "Age must be between 18 and 120");
     expectValue(validateAge("21"), 21);
+  });
+});
+
+describe("Conditional Validators", () => {
+  describe("optional", () => {
+    test("passes through null and undefined values unchanged", () => {
+      const validator = optional(minLength(3, "Too short"));
+      expectValue(validator(null), null);
+      expectValue(validator(undefined), undefined);
+    });
+
+    test("applies validation when value is present", () => {
+      const validator = optional(minLength(3, "Too short"));
+      expectError(validator("ab"), "Too short");
+      expectValue(validator("abc"), "abc");
+    });
+
+    test("works with multiple validators in pipe", () => {
+      const validateOptionalName = (name: string | undefined) =>
+        pipe(
+          makeOk(name),
+          andThen(optional(minLength(2, "Name too short"))),
+          andThen(optional(maxLength(50, "Name too long"))),
+        );
+
+      expectValue(validateOptionalName(undefined), undefined);
+      expectError(validateOptionalName("a"), "Name too short");
+      expectValue(validateOptionalName("John"), "John");
+    });
+  });
+
+  describe("optionalTransform", () => {
+    test("passes through null and undefined values unchanged", () => {
+      const validator = optionalTransform(parseNumber("Invalid number"));
+      expectValue(validator(null), null);
+      expectValue(validator(undefined), undefined);
+    });
+
+    test("transforms value when present", () => {
+      const validator = optionalTransform(parseNumber("Invalid number"));
+      expectError(validator("not-a-number"), "Invalid number");
+      expectValue(validator("42"), 42);
+    });
+
+    test("works with transformations in pipe", () => {
+      const validateOptionalAge = (ageStr: string | undefined) =>
+        pipe(
+          makeOk(ageStr),
+          andThen(optionalTransform(parseNumber("Invalid number"))),
+          andThen(optionalTransform(min(18, "Must be at least 18"))),
+        );
+
+      expectValue(validateOptionalAge(undefined), undefined);
+      expectError(validateOptionalAge("17"), "Must be at least 18");
+      expectValue(validateOptionalAge("21"), 21);
+    });
+  });
+
+  describe("withDefault", () => {
+    test("provides default value when input is null", () => {
+      const validator = withDefault<string, string>("default");
+      expectValue(validator(null), "default");
+    });
+
+    test("provides default value when input is undefined", () => {
+      const validator = withDefault<number, string>(10);
+      expectValue(validator(undefined), 10);
+    });
+
+    test("keeps original value when present", () => {
+      const validator = withDefault<string, string>("default");
+      expectValue(validator("actual value"), "actual value");
+    });
+
+    test("works with other validators in pipe", () => {
+      const validateRoleWithDefault = (role: string | undefined) =>
+        pipe(
+          makeOk(role),
+          andThen(withDefault<string, string>("user")),
+          andThen(oneOf(["admin", "user", "guest"], "Invalid role")),
+        );
+
+      expectValue(validateRoleWithDefault(undefined), "user");
+      expectError(validateRoleWithDefault("manager"), "Invalid role");
+      expectValue(validateRoleWithDefault("admin"), "admin");
+    });
   });
 });

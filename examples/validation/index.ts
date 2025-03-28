@@ -20,7 +20,6 @@ import {
   max,
   float,
   exactLength,
-  number,
   minItems,
   combineAllValidations,
   combineFormValidations,
@@ -30,6 +29,9 @@ import {
   oneOf,
   parseBoolean,
   validateArray,
+  optional,
+  optionalTransform,
+  withDefault,
 } from "@/index";
 
 // ===================================================
@@ -90,48 +92,43 @@ const validatePassword = (password: string) => {
 // ===================================================
 
 // URL validation
-const validateWebsite = (url: string) => {
+const validateWebsite = (url: string | undefined) => {
   return pipe(
-    ok<string, string>(url),
-    andThen(required("Website URL is required")),
-    andThen(isUrl("Please enter a valid URL")),
-    andThen(custom((url) => !url.includes("example.com"), "Example domains are not allowed")),
+    ok<string | undefined, string>(url),
+    andThen(optional(isUrl("Please enter a valid URL"))),
+    andThen(optional(custom((url) => !url.includes("example.com"), "Example domains are not allowed"))),
   );
 };
 
 // Date validation
-const validateEventDate = (dateStr: string) => {
+const validateEventDate = (dateStr: string | undefined) => {
   const today = new Date();
   const nextYear = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
 
   return pipe(
-    ok<string, string>(dateStr),
-    andThen(required("Event date is required")),
-    andThen(parseDate("Please enter a valid date")),
-    andThen(dateRange(today, nextYear, "Event must be scheduled between today and next year")),
+    ok<string | undefined, string>(dateStr),
+    andThen(optionalTransform(parseDate("Please enter a valid date"))),
+    andThen(optional(dateRange(today, nextYear, "Event must be scheduled between today and next year"))),
   );
 };
 
 // Number validation with range and decimal requirements
-const validatePrice = (priceStr: string) => {
+const validatePrice = (priceStr: string | undefined) => {
   return pipe(
-    ok<string, string>(priceStr),
-    andThen(required("Price is required")),
-    andThen(parseNumber("Please enter a valid number")),
-    andThen(number("Price must be a valid number")),
-    andThen(min(0.01, "Price must be greater than zero")),
-    andThen(max(9999.99, "Price cannot exceed $9,999.99")),
-    andThen(float("Price must include cents (e.g., 10.99)")),
+    ok<string | undefined, string>(priceStr),
+    andThen(optionalTransform(parseNumber("Please enter a valid number"))),
+    andThen(optional(min(0.01, "Price must be greater than zero"))),
+    andThen(optional(max(9999.99, "Price cannot exceed $9,999.99"))),
+    andThen(optional(float("Price must include cents (e.g., 10.99)"))),
   );
 };
 
 // Exact length validation (e.g., for verification codes)
-const validateVerificationCode = (code: string) => {
+const validateVerificationCode = (code: string | undefined) => {
   return pipe(
-    ok<string, string>(code),
-    andThen(required("Verification code is required")),
-    andThen(exactLength(6, "Verification code must be exactly 6 characters")),
-    andThen(matches(/^[0-9]+$/, "Verification code must contain only numbers")),
+    ok<string | undefined, string>(code),
+    andThen(optional(exactLength(6, "Verification code must be exactly 6 characters"))),
+    andThen(optional(matches(/^[0-9]+$/, "Verification code must contain only numbers"))),
   );
 };
 
@@ -155,14 +152,13 @@ const validateTags = (tags: string[]) => {
 };
 
 // Enum validation with oneOf
-const validateRole = (role: string) => {
+const validateRoleWithDefault = (role: string | undefined) => {
   return pipe(
-    ok<string, string>(role),
-    andThen(required("Role is required")),
+    ok<string | undefined, string>(role),
+    andThen(withDefault("viewer")), // Default to "viewer" if undefined
     andThen(oneOf(["admin", "editor", "viewer"], "Invalid role selected")),
   );
 };
-
 // Boolean validation
 const validateTermsAccepted = (termsStr: string) => {
   return pipe(
@@ -218,10 +214,10 @@ type FormData = {
   age: string;
   password: string;
   passwordConfirmation: string;
-  role: string;
   termsAccepted: string;
   tags: string[];
-  website: string;
+  role?: string;
+  website?: string;
   eventDate?: string;
   price?: string;
   verificationCode?: string;
@@ -234,9 +230,9 @@ const validateFormWithFieldNames = (formData: FormData) => {
     age,
     password,
     passwordConfirmation,
-    role,
     termsAccepted,
     tags,
+    role,
     website,
     eventDate,
     price,
@@ -250,13 +246,13 @@ const validateFormWithFieldNames = (formData: FormData) => {
     age: validateAge(age),
     password: validatePassword(password),
     passwordConfirmation: validatePasswordConfirmation(password, passwordConfirmation),
-    ...(website ? { website: validateWebsite(website) } : {}),
-    ...(eventDate ? { eventDate: validateEventDate(eventDate) } : {}),
-    ...(price ? { price: validatePrice(price) } : {}),
-    ...(verificationCode ? { verificationCode: validateVerificationCode(verificationCode) } : {}),
-    role: validateRole(role),
     termsAccepted: validateTermsAccepted(termsAccepted),
     tags: validateTags(tags),
+    role: validateRoleWithDefault(role),
+    website: validateWebsite(website),
+    eventDate: validateEventDate(eventDate),
+    price: validatePrice(price),
+    verificationCode: validateVerificationCode(verificationCode),
   });
 };
 
@@ -327,6 +323,29 @@ const invalidFormWithFieldNames = validateFormWithFieldNames({
 });
 match(invalidFormWithFieldNames, {
   ok: (values) => console.log("Form validation passed:", values),
+  err: (fieldErrors) => {
+    console.error("Form validation failed with field errors:");
+    fieldErrors.forEach(({ field, error }) => {
+      console.error(`  - ${field}: ${error}`);
+    });
+  },
+});
+
+console.log("\n=== Form with Optional Fields and Defaults ===");
+const formWithOptionalFields = validateFormWithFieldNames({
+  username: "jane_smith",
+  email: "jane@example.com",
+  age: "30",
+  password: "SecurePass123",
+  passwordConfirmation: "SecurePass123",
+  // role: undefined, // Omitting role to demonstrate default value
+  termsAccepted: "yes",
+  tags: ["typescript", "optional-validation"],
+  // Omitting optional fields
+  // website, eventDate, price, and verificationCode are undefined
+});
+match(formWithOptionalFields, {
+  ok: (values) => console.log("Form with optional fields passed:", values),
   err: (fieldErrors) => {
     console.error("Form validation failed with field errors:");
     fieldErrors.forEach(({ field, error }) => {
