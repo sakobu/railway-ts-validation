@@ -1,8 +1,7 @@
 /**
  * Validation functions for functional programming
  *
- * @module validation
- */
+ * @module @railway-ts/validation */
 
 export * from "./core";
 export * from "./utils";

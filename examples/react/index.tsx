@@ -3,7 +3,18 @@ import { useState } from "react";
 
 // In published code, consumers should use:
 // import { andThen, required... } from "@railway-ts/validation";
-import { andThen, required, minLength, matches, isEmail, parseNumber, min, combineFormValidations } from "@/index";
+import {
+  andThen,
+  required,
+  minLength,
+  matches,
+  isEmail,
+  parseNumber,
+  min,
+  combineFormValidations,
+  optionalTransform,
+  optional,
+} from "@/index";
 
 // Library validation error interface
 interface FieldValidationError {
@@ -25,15 +36,34 @@ function useValidation<T extends Record<string, unknown>>() {
       error: String(err.error),
     }));
 
+  // Type helper function that allows for more flexible validator signatures
+  type ValidatorFn<TValue, TReturn = unknown> =
+    | ((value: TValue) => Result<TReturn, string>)
+    // Allow for validators that only accept non-undefined values too
+    | ((value: NonNullable<TValue>) => Result<TReturn, string>);
+
   // Create a validator function with the given schema
-  const createValidator = <K extends keyof T>(schema: Record<K, (value: T[K]) => ReturnType<typeof ok>>) => {
+  const createValidator = <K extends keyof T>(schema: Record<K, ValidatorFn<T[K]>>) => {
     return (data: T) => {
       // Create a record of validation results by applying each field validator to its data
       const validationResults = Object.entries(schema).reduce(
-        (results, [field, validator]) => ({
-          ...results,
-          [field]: (validator as (value: T[keyof T]) => ReturnType<typeof ok>)(data[field as keyof T]),
-        }),
+        (results, [field, validator]) => {
+          const value = data[field as keyof T];
+          try {
+            // Apply validator safely
+            const result = (validator as any)(value);
+            return { ...results, [field]: result };
+          } catch (error) {
+            // In case of validators that don't accept undefined but get undefined
+            return {
+              ...results,
+              [field]: {
+                ok: false,
+                error: error instanceof Error ? error.message : "Validation error",
+              },
+            };
+          }
+        },
         {} as Record<string, ReturnType<typeof ok>>,
       );
 
@@ -46,7 +76,6 @@ function useValidation<T extends Record<string, unknown>>() {
     mapToFieldErrors,
   };
 }
-
 // Generic form hook
 function useForm<T extends Record<string, unknown>>(
   initialValues: T,
@@ -193,12 +222,12 @@ const useValidateUserForm = () => {
     );
   };
 
-  const validateAge = (ageStr: string) => {
+  const validateAge = (ageStr?: string) => {
     return pipe(
-      ok<string, string>(ageStr),
-      andThen(required("Age is required")),
-      andThen(parseNumber("Please enter a valid number")),
-      andThen(min(18, "You must be at least 18 years old")),
+      ok<string | undefined, string>(ageStr),
+      // andThen(required("Age is required")),
+      andThen(optionalTransform(parseNumber("Please enter a valid number"))),
+      andThen(optional(min(18, "You must be at least 18 years old"))),
     );
   };
 
@@ -209,7 +238,7 @@ const useValidateUserForm = () => {
 type UserFormData = {
   username: string;
   email: string;
-  age: string;
+  age?: string;
 };
 
 const UserForm = () => {
