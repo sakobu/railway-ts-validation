@@ -1,34 +1,157 @@
-import { type Result, ok, err } from "@railway-ts/core/result";
+import { err, ok } from "@railway-ts/core";
+
+import type { Validator } from "./core";
+
 /**
- * Creates a validator that checks if a date is within a specified range
+ * Creates a validator that ensures a Date is within a specified range.
+ *
+ * @param {Date} min - The minimum valid date (inclusive)
+ * @param {Date} max - The maximum valid date (inclusive)
+ * @param {string} [message] - Custom error message (defaults to a readable date range)
+ * @returns {Validator<Date>} A validator that checks if a date is between min and max
  *
  * @example
- * ```ts
- * // Event date validation
+ * // Validate that a date is within a specific range
+ * const birthDate = new Date('1950-01-01');
  * const today = new Date();
- * const nextYear = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
+ * const birthDateValidator = dateRange(birthDate, today);
  *
- * pipe(
- *   ok<string, string>(eventDateStr),
- *   andThen(parseDate("Invalid date format")),
- *   andThen(dateRange(today, nextYear, "Event must be scheduled between today and next year")),
- *   // other validations...
+ * const result = birthDateValidator(new Date('1990-05-15'));
+ * // If valid: { ok: true, value: Date(1990-05-15), [RESULT_BRAND]: 'ok' }
+ *
+ * @example
+ * // With custom error message
+ * const validPeriod = dateRange(
+ *   new Date('2023-01-01'),
+ *   new Date('2023-12-31'),
+ *   'The date must be within the 2023 calendar year'
  * );
- * ```
  *
- * @param minDate - The minimum date allowed
- * @param maxDate - The maximum date allowed
- * @param message - The error message to return if validation fails
- * @returns A validator function that returns a Result
+ * @example
+ * // Used in an object schema
+ * const eventSchema = object({
+ *   eventDate: required(composeRight(parseDate(), dateRange(startDate, endDate)))
+ * });
  */
-export const dateRange = (minDate: Date, maxDate: Date, message?: string) => {
-  return (value: Date): Result<Date, string> => {
-    if (value < minDate || value > maxDate) {
-      return err(
-        message ||
-          `Date must be between ${minDate.toISOString().split("T")[0]} and ${maxDate.toISOString().split("T")[0]}`,
-      );
+export function dateRange(
+  min: Date,
+  max: Date,
+  message: string = `Must be between ${min.toISOString().split("T")[0]} and ${max.toISOString().split("T")[0]}`,
+): Validator<Date> {
+  return (value, path = []) => {
+    if (value < min || value > max) {
+      return err([{ path, message }]);
     }
     return ok(value);
   };
-};
+}
+
+/**
+ * Creates a validator that ensures a Date is in the past (before the current date and time).
+ *
+ * @param {string} [message='Must be a date in the past'] - Custom error message
+ * @returns {Validator<Date>} A validator that checks if a date is in the past
+ *
+ * @example
+ * // Validate that a date is in the past
+ * const birthDateValidator = pastDate();
+ * const result = birthDateValidator(new Date('1990-01-01'));
+ * // If valid: { ok: true, value: Date(1990-01-01), [RESULT_BRAND]: 'ok' }
+ *
+ * @example
+ * // With future date (invalid)
+ * const tomorrow = new Date();
+ * tomorrow.setDate(tomorrow.getDate() + 1);
+ * const result = pastDate()(tomorrow);
+ * // If invalid: { ok: false, error: [{ path: [], message: 'Must be a date in the past' }], [RESULT_BRAND]: 'error' }
+ *
+ * @example
+ * // Used in an object schema with custom message
+ * const userSchema = object({
+ *   birthDate: required(composeRight(parseDate(), pastDate('Birth date must be in the past')))
+ * });
+ */
+export function pastDate(message: string = "Must be a date in the past"): Validator<Date> {
+  return (value, path = []) => {
+    if (value >= new Date()) {
+      return err([{ path, message }]);
+    }
+    return ok(value);
+  };
+}
+
+/**
+ * Creates a validator that ensures a Date is in the future (after the current date and time).
+ *
+ * @param {string} [message='Must be a date in the future'] - Custom error message
+ * @returns {Validator<Date>} A validator that checks if a date is in the future
+ *
+ * @example
+ * // Validate that a date is in the future
+ * const expiryDateValidator = futureDate();
+ * const nextYear = new Date();
+ * nextYear.setFullYear(nextYear.getFullYear() + 1);
+ * const result = expiryDateValidator(nextYear);
+ * // If valid: { ok: true, value: Date(next-year), [RESULT_BRAND]: 'ok' }
+ *
+ * @example
+ * // With past date (invalid)
+ * const lastYear = new Date();
+ * lastYear.setFullYear(lastYear.getFullYear() - 1);
+ * const result = futureDate()(lastYear);
+ * // If invalid: { ok: false, error: [{ path: [], message: 'Must be a date in the future' }], [RESULT_BRAND]: 'error' }
+ *
+ * @example
+ * // Used in an object schema with custom message
+ * const subscriptionSchema = object({
+ *   expirationDate: required(composeRight(parseDate(), futureDate('Expiration date must be in the future')))
+ * });
+ */
+export function futureDate(message: string = "Must be a date in the future"): Validator<Date> {
+  return (value, path = []) => {
+    if (value <= new Date()) {
+      return err([{ path, message }]);
+    }
+    return ok(value);
+  };
+}
+
+/**
+ * Creates a validator that ensures a Date is either today or in the future.
+ * This validator uses calendar date comparison (ignoring time portions).
+ *
+ * @param {string} [message='Must be today or a future date'] - Custom error message
+ * @returns {Validator<Date>} A validator that checks if a date is today or in the future
+ *
+ * @example
+ * // Validate that a date is today or later
+ * const deliveryDateValidator = todayOrFuture();
+ * const tomorrow = new Date();
+ * tomorrow.setDate(tomorrow.getDate() + 1);
+ * const result = deliveryDateValidator(tomorrow);
+ * // If valid: { ok: true, value: Date(tomorrow), [RESULT_BRAND]: 'ok' }
+ *
+ * @example
+ * // With a date from yesterday (invalid)
+ * const yesterday = new Date();
+ * yesterday.setDate(yesterday.getDate() - 1);
+ * const result = todayOrFuture()(yesterday);
+ * // If invalid: { ok: false, error: [{ path: [], message: 'Must be today or a future date' }], [RESULT_BRAND]: 'error' }
+ *
+ * @example
+ * // Used in an object schema with custom message
+ * const eventSchema = object({
+ *   startDate: required(composeRight(parseDate(), todayOrFuture('Event must start today or in the future')))
+ * });
+ */
+export function todayOrFuture(message: string = "Must be today or a future date"): Validator<Date> {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return (value, path = []) => {
+    if (value < today) {
+      return err([{ path, message }]);
+    }
+    return ok(value);
+  };
+}

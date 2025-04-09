@@ -1,333 +1,188 @@
-import { ok, err, isOk, isErr, type Result } from "@railway-ts/core/result";
-import { pipe } from "@railway-ts/core/utils";
+import { ok, err, isOk, isErr } from "@railway-ts/core";
 import { describe, test, expect } from "bun:test";
 
-import {
-  type FieldValidationError,
-  combineValidation,
-  combineAllValidations,
-  combineFormValidations,
-  andThen,
-  required,
-  minLength,
-  isEmail,
-  matches,
-  parseNumber,
-  min,
-  integer,
-  custom,
-} from "@/index";
+import { composeRight, validate, formatErrors } from "@/utils";
 
-// Helper function to create a typed error result
-const errResult = <T>(message: string): Result<T, string> => err(message);
+import type { Validator, ValidationError } from "@/core";
 
-describe("Validation Utils", () => {
-  describe("andThen", () => {
-    test("chains validators together", () => {
-      // Create a validation pipeline like in the examples
-      const validateUsername = (username: string) => {
-        return pipe(
-          ok<string, string>(username),
-          andThen(required("Username is required")),
-          andThen(minLength(3, "Username too short")),
-          andThen(matches(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers and underscore")),
-        );
+describe("utils - composeRight", () => {
+  // Basic validators for testing
+  const stringValidator: Validator<unknown, string> = (value) => {
+    if (typeof value !== "string") {
+      const error: ValidationError = { path: [], message: "Expected a string" };
+      return err([error]);
+    }
+    return ok(value);
+  };
+
+  const minLengthValidator =
+    (min: number): Validator<string, string> =>
+    (value, path = []) => {
+      if (value.length < min) {
+        const error: ValidationError = { path, message: `Must be at least ${min} characters` };
+        return err([error]);
+      }
+      return ok(value);
+    };
+
+  const toUpperCaseValidator: Validator<string, string> = (value) => {
+    return ok(value.toUpperCase());
+  };
+
+  test("should pass through a valid value with single validator", () => {
+    const validator = composeRight(stringValidator);
+    const result = validator("test");
+
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value).toBe("test");
+    }
+  });
+
+  test("should handle multiple validators in sequence", () => {
+    const validator = composeRight(stringValidator, minLengthValidator(3), toUpperCaseValidator);
+
+    const result = validator("test");
+
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value).toBe("TEST");
+    }
+  });
+
+  test("should fail if first validator fails", () => {
+    const validator = composeRight(stringValidator, minLengthValidator(3), toUpperCaseValidator);
+
+    const result = validator(123);
+
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) {
+      const error = result.error[0] || { path: [], message: "" };
+      expect(error.message).toBe("Expected a string");
+    }
+  });
+
+  test("should fail if middle validator fails", () => {
+    const validator = composeRight(stringValidator, minLengthValidator(3), toUpperCaseValidator);
+
+    const result = validator("ab"); // Too short for minLengthValidator
+
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) {
+      const error = result.error[0] || { path: [], message: "" };
+      expect(error.message).toBe("Must be at least 3 characters");
+    }
+  });
+
+  test("should maintain path information", () => {
+    const minLengthWithPath =
+      (min: number): Validator<string, string> =>
+      (value, path = []) => {
+        if (value.length < min) {
+          const error: ValidationError = { path, message: `Must be at least ${min} characters` };
+          return err([error]);
+        }
+        return ok(value);
       };
 
-      // Test valid input
-      const validResult = validateUsername("john_doe");
-      expect(isOk(validResult)).toBe(true);
-      if (isOk(validResult)) {
-        expect(validResult.value).toBe("john_doe");
-      }
+    const validator = composeRight(stringValidator, minLengthWithPath(3));
 
-      // Test invalid inputs
-      const emptyResult = validateUsername("");
-      expect(isErr(emptyResult)).toBe(true);
-      if (isErr(emptyResult)) {
-        expect(emptyResult.error).toBe("Username is required");
-      }
+    const result = validator("ab", ["user", "name"]);
 
-      const shortResult = validateUsername("jo");
-      expect(isErr(shortResult)).toBe(true);
-      if (isErr(shortResult)) {
-        expect(shortResult.error).toBe("Username too short");
-      }
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) {
+      const error = result.error[0] || { path: [], message: "" };
+      expect(error.path).toEqual(["user", "name"]);
+    }
+  });
+});
 
-      const invalidCharsResult = validateUsername("john@doe");
-      expect(isErr(invalidCharsResult)).toBe(true);
-      if (isErr(invalidCharsResult)) {
-        expect(invalidCharsResult.error).toBe("Username can only contain letters, numbers and underscore");
+describe("utils - validate", () => {
+  test("should run the validator on the provided value", () => {
+    const stringValidator: Validator<unknown, string> = (value) => {
+      if (typeof value !== "string") {
+        const error: ValidationError = { path: [], message: "Expected a string" };
+        return err([error]);
       }
+      return ok(value);
+    };
+
+    // Valid case
+    const validResult = validate("test", stringValidator);
+    expect(isOk(validResult)).toBe(true);
+    if (isOk(validResult)) {
+      expect(validResult.value).toBe("test");
+    }
+
+    // Invalid case
+    const invalidResult = validate(123, stringValidator);
+    expect(isErr(invalidResult)).toBe(true);
+    if (isErr(invalidResult)) {
+      const error = invalidResult.error[0] || { path: [], message: "" };
+      expect(error.message).toBe("Expected a string");
+    }
+  });
+});
+
+describe("utils - formatErrors", () => {
+  test("should format simple path errors", () => {
+    const errors: ValidationError[] = [
+      { path: ["name"], message: "Name is required" },
+      { path: ["email"], message: "Invalid email format" },
+    ];
+
+    const formatted = formatErrors(errors);
+    expect(formatted).toEqual({
+      name: "Name is required",
+      email: "Invalid email format",
     });
   });
 
-  describe("combineValidation", () => {
-    test("returns Ok with array of values when all validations pass", () => {
-      const results = [ok<string, string>("username"), ok<number, string>(25), ok<boolean, string>(true)];
+  test("should format nested path errors with dot notation", () => {
+    const errors: ValidationError[] = [
+      { path: ["user", "name"], message: "Name is required" },
+      { path: ["user", "contact", "email"], message: "Invalid email format" },
+    ];
 
-      const combined = combineValidation(results);
-      expect(isOk(combined)).toBe(true);
-      if (isOk(combined)) {
-        expect(combined.value).toEqual(["username", 25, true]);
-      }
-    });
-
-    test("returns first Err when any validation fails", () => {
-      const results = [
-        ok<string, string>("username"),
-        errResult<number>("Invalid age"),
-        errResult<boolean>("Invalid flag"),
-      ];
-
-      const combined = combineValidation(results);
-      expect(isErr(combined)).toBe(true);
-      if (isErr(combined)) {
-        expect(combined.error).toBe("Invalid age");
-      }
-    });
-
-    test("works with realistic form validation scenario", () => {
-      // Create validation functions like in the example
-      const validateUsername = (username: string) =>
-        pipe(
-          ok<string, string>(username),
-          andThen(required("Username is required")),
-          andThen(minLength(3, "Username too short")),
-        );
-
-      const validateEmail = (email: string) =>
-        pipe(
-          ok<string, string>(email),
-          andThen(required("Email is required")),
-          andThen(isEmail("Invalid email format")),
-        );
-
-      const validateAge = (ageStr: string) =>
-        pipe(
-          ok<string, string>(ageStr),
-          andThen(required("Age is required")),
-          andThen(parseNumber("Please enter a valid number")),
-          andThen(min(18, "Must be at least 18")),
-          andThen(integer("Age must be a whole number")),
-        );
-
-      // Test with valid inputs
-      const validResults = [validateUsername("john_doe"), validateEmail("john@example.com"), validateAge("25")];
-
-      const validCombined = combineValidation(validResults);
-      expect(isOk(validCombined)).toBe(true);
-
-      // Test with invalid inputs
-      const invalidResults = [
-        validateUsername("john_doe"),
-        validateEmail("invalid-email"), // This will fail
-        validateAge("25"),
-      ];
-
-      const invalidCombined = combineValidation(invalidResults);
-      expect(isErr(invalidCombined)).toBe(true);
-      if (isErr(invalidCombined)) {
-        expect(invalidCombined.error).toBe("Invalid email format");
-      }
-    });
-
-    test("works with empty array", () => {
-      const results: [] = [];
-      const combined = combineValidation(results);
-      expect(isOk(combined)).toBe(true);
-      if (isOk(combined)) {
-        expect(combined.value).toEqual([]);
-      }
+    const formatted = formatErrors(errors);
+    expect(formatted).toEqual({
+      "user.name": "Name is required",
+      "user.contact.email": "Invalid email format",
     });
   });
 
-  describe("combineAllValidations", () => {
-    test("returns Ok with array of values when all validations pass", () => {
-      const results = [ok<string, string>("username"), ok<number, string>(25), ok<boolean, string>(true)];
+  test("should format array index paths with bracket notation", () => {
+    const errors: ValidationError[] = [
+      { path: ["users", "0", "name"], message: "Name is required" },
+      { path: ["addresses", "1", "zipCode"], message: "Invalid zip code" },
+    ];
 
-      const combined = combineAllValidations(results);
-      expect(isOk(combined)).toBe(true);
-      if (isOk(combined)) {
-        expect(combined.value).toEqual(["username", 25, true]);
-      }
-    });
-
-    test("returns Err with array of all errors when any validation fails", () => {
-      const results = [
-        ok<string, string>("username"),
-        errResult<number>("Invalid age"),
-        errResult<boolean>("Invalid flag"),
-      ];
-
-      const combined = combineAllValidations(results);
-      expect(isErr(combined)).toBe(true);
-      if (isErr(combined)) {
-        expect(combined.error).toEqual(["Invalid age", "Invalid flag"]);
-      }
-    });
-
-    test("works with realistic form validation example", () => {
-      // Create validation functions like in the example
-      const validateUsername = (username: string) =>
-        pipe(
-          ok<string, string>(username),
-          andThen(required("Username is required")),
-          andThen(minLength(3, "Username too short")),
-        );
-
-      const validateEmail = (email: string) =>
-        pipe(
-          ok<string, string>(email),
-          andThen(required("Email is required")),
-          andThen(isEmail("Invalid email format")),
-          andThen(custom((e) => !e.endsWith("gmail.com"), "Gmail addresses not accepted")),
-        );
-
-      const validateAge = (ageStr: string) =>
-        pipe(
-          ok<string, string>(ageStr),
-          andThen(required("Age is required")),
-          andThen(parseNumber("Please enter a valid number")),
-          andThen(min(18, "Must be at least 18")),
-        );
-
-      // Test with multiple invalid inputs to collect all errors
-      const invalidResults = [
-        validateUsername("j"), // Too short
-        validateEmail("user@gmail.com"), // Gmail not accepted
-        validateAge("17"), // Under 18
-      ];
-
-      const invalidCombined = combineAllValidations(invalidResults);
-      expect(isErr(invalidCombined)).toBe(true);
-      if (isErr(invalidCombined)) {
-        expect(invalidCombined.error).toEqual([
-          "Username too short",
-          "Gmail addresses not accepted",
-          "Must be at least 18",
-        ]);
-      }
-    });
-
-    test("works with empty array", () => {
-      const results: [] = [];
-      const combined = combineAllValidations(results);
-      expect(isOk(combined)).toBe(true);
-      if (isOk(combined)) {
-        expect(combined.value).toEqual([]);
-      }
+    const formatted = formatErrors(errors);
+    expect(formatted).toEqual({
+      "users[0].name": "Name is required",
+      "addresses[1].zipCode": "Invalid zip code",
     });
   });
 
-  describe("combineFormValidations", () => {
-    test("returns Ok with object of values when all validations pass", () => {
-      const validations = {
-        username: ok<string, string>("john"),
-        age: ok<number, string>(25),
-        isAdmin: ok<boolean, string>(true),
-      };
+  test("should handle empty path arrays", () => {
+    const errors: ValidationError[] = [{ path: [], message: "General error" }];
 
-      const combined = combineFormValidations(validations);
-      expect(isOk(combined)).toBe(true);
-      if (isOk(combined)) {
-        expect(combined.value).toEqual({
-          username: "john",
-          age: 25,
-          isAdmin: true,
-        });
-      }
+    const formatted = formatErrors(errors);
+    expect(formatted).toEqual({
+      "": "General error",
     });
+  });
 
-    test("returns Err with field errors when any validation fails", () => {
-      const validations = {
-        username: ok<string, string>("john"),
-        email: errResult<string>("Invalid email"),
-        age: errResult<number>("Age must be at least 18"),
-      };
+  test("should handle mixed path types", () => {
+    const errors: ValidationError[] = [
+      { path: ["users", "0", "addresses", "1", "street"], message: "Street is required" },
+      { path: ["config", "settings", "notifications"], message: "Invalid setting" },
+    ];
 
-      const combined = combineFormValidations(validations);
-      expect(isErr(combined)).toBe(true);
-      if (isErr(combined)) {
-        const expectedErrors: FieldValidationError<string>[] = [
-          { field: "email", error: "Invalid email" },
-          { field: "age", error: "Age must be at least 18" },
-        ];
-
-        // Check that all expected errors are in the result
-        // (not checking the order as it depends on object iteration)
-        expect(combined.error).toHaveLength(2);
-        expect(combined.error).toEqual(expect.arrayContaining(expectedErrors));
-      }
-    });
-
-    test("works with realistic form validation scenario", () => {
-      // Creating field validation functions like in the example
-      const validateUsername = (username: string) =>
-        pipe(
-          ok<string, string>(username),
-          andThen(required("Username is required")),
-          andThen(minLength(3, "Username too short")),
-        );
-
-      const validateEmail = (email: string) =>
-        pipe(
-          ok<string, string>(email),
-          andThen(required("Email is required")),
-          andThen(isEmail("Invalid email format")),
-        );
-
-      const validateAge = (ageStr: string) =>
-        pipe(
-          ok<string, string>(ageStr),
-          andThen(required("Age is required")),
-          andThen(parseNumber("Please enter a valid number")),
-          andThen(min(18, "Must be at least 18")),
-        );
-
-      // Test a valid form submission
-      const validForm = combineFormValidations({
-        username: validateUsername("john_doe"),
-        email: validateEmail("john@example.com"),
-        age: validateAge("25"),
-      });
-
-      expect(isOk(validForm)).toBe(true);
-      if (isOk(validForm)) {
-        expect(validForm.value).toEqual({
-          username: "john_doe",
-          email: "john@example.com",
-          age: 25, // Notice this is converted to a number by parseNumber
-        });
-      }
-
-      // Test an invalid form submission
-      const invalidForm = combineFormValidations({
-        username: validateUsername("j"),
-        email: validateEmail("invalid-email"),
-        age: validateAge("seventeen"),
-      });
-
-      expect(isErr(invalidForm)).toBe(true);
-      if (isErr(invalidForm)) {
-        const expectedErrors: FieldValidationError<string>[] = [
-          { field: "username", error: "Username too short" },
-          { field: "email", error: "Invalid email format" },
-          { field: "age", error: "Please enter a valid number" },
-        ];
-
-        expect(invalidForm.error).toHaveLength(3);
-        expect(invalidForm.error).toEqual(expect.arrayContaining(expectedErrors));
-      }
-    });
-
-    test("works with empty object", () => {
-      const validations = {};
-      const combined = combineFormValidations(validations);
-      expect(isOk(combined)).toBe(true);
-      if (isOk(combined)) {
-        expect(combined.value).toEqual({});
-      }
+    const formatted = formatErrors(errors);
+    expect(formatted).toEqual({
+      "users[0].addresses[1].street": "Street is required",
+      "config.settings.notifications": "Invalid setting",
     });
   });
 });

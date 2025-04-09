@@ -1,171 +1,225 @@
-import { type Result, ok, err } from "@railway-ts/core/result";
+import { err, ok } from "@railway-ts/core";
+
+import type { Validator } from "./core";
 
 /**
- * Creates a validator for minimum string length
+ * Creates a validator that ensures a value is a string.
+ *
+ * @param {string} [message='Must be a string'] - Custom error message
+ * @returns {Validator<unknown, string>} A validator that checks if a value is a string
  *
  * @example
- * ```ts
- * // In a validation pipeline
- * pipe(
- *   ok<string, string>(username),
- *   andThen(required("Username is required")),
- *   andThen(minLength(3, "Username too short")),
- *   // other validations...
- * );
- * ```
+ * // Validate that a value is a string
+ * const nameValidator = string();
+ * const result = nameValidator('John');
+ * // If valid: { ok: true, value: 'John', [RESULT_BRAND]: 'ok' }
  *
- * @param min - The minimum length required
- * @param message - The error message to return if validation fails
- * @returns A validator function that returns a Result
+ * @example
+ * // With invalid input
+ * const result = string()(42);
+ * // If invalid: { ok: false, error: [{ path: [], message: 'Must be a string' }], [RESULT_BRAND]: 'error' }
+ *
+ * @example
+ * // With custom error message
+ * const labelValidator = string('Label must be text');
+ *
+ * @example
+ * // Used in an object schema
+ * const userSchema = object({
+ *   name: required(string())
+ * });
  */
-export const minLength = (min: number, message?: string) => {
-  return (value: string): Result<string, string> => {
+export function string(message: string = "Must be a string"): Validator<unknown, string> {
+  return (value, path = []) => {
+    if (typeof value !== "string") {
+      return err([{ path, message }]);
+    }
+    return ok(value);
+  };
+}
+
+/**
+ * Creates a validator that ensures a string's length is at least a minimum value.
+ *
+ * @param {number} min - The minimum length (inclusive)
+ * @param {string} [message] - Custom error message (defaults to 'Must be at least {min} characters')
+ * @returns {Validator<string>} A validator that checks if a string meets the minimum length
+ *
+ * @example
+ * // Validate that a string is at least 3 characters long
+ * const usernameValidator = minLength(3);
+ * const result = usernameValidator('john_doe');
+ * // If valid: { ok: true, value: 'john_doe', [RESULT_BRAND]: 'ok' }
+ *
+ * @example
+ * // With invalid input
+ * const result = minLength(3)('jo');
+ * // If invalid: { ok: false, error: [{ path: [], message: 'Must be at least 3 characters' }], [RESULT_BRAND]: 'error' }
+ *
+ * @example
+ * // With custom error message
+ * const passwordValidator = minLength(8, 'Password must be at least 8 characters long');
+ *
+ * @example
+ * // Used in an object schema with composition
+ * const userSchema = object({
+ *   username: required(composeRight(string(), nonEmpty(), minLength(3)))
+ * });
+ */
+export function minLength(min: number, message: string = `Must be at least ${min} characters`): Validator<string> {
+  return (value, path = []) => {
     if (value.length < min) {
-      return err(message || `Must be at least ${min} characters`);
+      return err([{ path, message }]);
     }
     return ok(value);
   };
-};
+}
 
 /**
- * Creates a validator for maximum string length
+ * Creates a validator that ensures a string's length is at most a maximum value.
+ *
+ * @param {number} max - The maximum length (inclusive)
+ * @param {string} [message] - Custom error message (defaults to 'Must be at most {max} characters')
+ * @returns {Validator<string>} A validator that checks if a string meets the maximum length
  *
  * @example
- * ```ts
- * // In a validation pipeline
- * pipe(
- *   ok<string, string>(value),
- *   andThen(maxLength(50, "Description too long")),
- *   // other validations...
- * );
- * ```
+ * // Validate that a string is at most 50 characters long
+ * const titleValidator = maxLength(50);
+ * const result = titleValidator('This is a short title');
+ * // If valid: { ok: true, value: 'This is a short title', [RESULT_BRAND]: 'ok' }
  *
- * @param max - The maximum length allowed
- * @param message - The error message to return if validation fails
- * @returns A validator function that returns a Result
+ * @example
+ * // With invalid input (too long)
+ * const veryLongString = 'This string is more than 10 characters long';
+ * const result = maxLength(10)(veryLongString);
+ * // If invalid: { ok: false, error: [{ path: [], message: 'Must be at most 10 characters' }], [RESULT_BRAND]: 'error' }
+ *
+ * @example
+ * // With custom error message
+ * const bioValidator = maxLength(150, 'Bio must be 150 characters or less');
+ *
+ * @example
+ * // Used in an object schema with composition
+ * const postSchema = object({
+ *   title: required(composeRight(string(), maxLength(100)))
+ * });
  */
-export const maxLength = (max: number, message?: string) => {
-  return (value: string): Result<string, string> => {
+export function maxLength(max: number, message: string = `Must be at most ${max} characters`): Validator<string> {
+  return (value, path = []) => {
     if (value.length > max) {
-      return err(message || `Must be at most ${max} characters`);
+      return err([{ path, message }]);
     }
     return ok(value);
   };
-};
+}
 
 /**
- * Creates a validator that checks if a string has an exact length
+ * Creates a validator that ensures a string matches a regular expression pattern.
+ *
+ * @param {RegExp} regex - The regular expression to test against
+ * @param {string} [message='Invalid format'] - Custom error message
+ * @returns {Validator<string>} A validator that checks if a string matches the pattern
  *
  * @example
- * ```ts
- * // Verification code validation
- * pipe(
- *   ok<string, string>(verificationCode),
- *   andThen(required("Verification code is required")),
- *   andThen(exactLength(6, "Verification code must be exactly 6 characters")),
- *   // other validations...
- * );
- * ```
- *
- * @param length - The exact length required
- * @param message - The error message to return if validation fails
- * @returns A validator function that returns a Result
- */
-export const exactLength = (length: number, message?: string) => {
-  return (value: string): Result<string, string> => {
-    if (value.length !== length) {
-      return err(message || `Must be exactly ${length} characters`);
-    }
-    return ok(value);
-  };
-};
-
-/**
- * Creates a validator that checks a string against a regex pattern
+ * // Validate that a string matches a pattern (alphanumeric)
+ * const alphanumericValidator = pattern(/^[a-zA-Z0-9]+$/);
+ * const result = alphanumericValidator('abc123');
+ * // If valid: { ok: true, value: 'abc123', [RESULT_BRAND]: 'ok' }
  *
  * @example
- * ```ts
- * // Validate username format
- * pipe(
- *   ok<string, string>(username),
- *   andThen(matches(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers and underscore")),
- *   // other validations...
- * );
+ * // With invalid input
+ * const result = pattern(/^\d{5}$/)('abc');
+ * // If invalid: { ok: false, error: [{ path: [], message: 'Invalid format' }], [RESULT_BRAND]: 'error' }
  *
- * // Password complexity validation
- * pipe(
- *   ok<string, string>(password),
- *   andThen(matches(/[A-Z]/, "Password must contain an uppercase letter")),
- *   andThen(matches(/[a-z]/, "Password must contain a lowercase letter")),
- *   andThen(matches(/[0-9]/, "Password must contain a number")),
- *   // other validations...
- * );
- * ```
+ * @example
+ * // With custom error message
+ * const zipCodeValidator = pattern(/^\d{5}$/, 'ZIP code must be 5 digits');
  *
- * @param regex - The regex pattern to match
- * @param message - The error message to return if validation fails
- * @returns A validator function that returns a Result
+ * @example
+ * // Used in an object schema
+ * const addressSchema = object({
+ *   zipCode: optional(composeRight(string(), pattern(/^\d{5}$/, 'Invalid ZIP code format')))
+ * });
  */
-export const matches = (regex: RegExp, message: string) => {
-  return (value: string): Result<string, string> => {
+export function pattern(regex: RegExp, message: string = "Invalid format"): Validator<string> {
+  return (value, path = []) => {
     if (!regex.test(value)) {
-      return err(message);
+      return err([{ path, message }]);
     }
     return ok(value);
   };
-};
+}
 
 /**
- * Email validator
+ * Creates a validator that ensures a string is not empty after trimming whitespace.
+ *
+ * @param {string} [message='String must not be empty'] - Custom error message
+ * @returns {Validator<string>} A validator that checks if a string is not empty
  *
  * @example
- * ```ts
- * // Email validation
- * pipe(
- *   ok<string, string>(email),
- *   andThen(required("Email is required")),
- *   andThen(isEmail()),
- *   // other validations...
- * );
- * ```
+ * // Validate that a string is not empty
+ * const nameValidator = nonEmpty();
+ * const result = nameValidator('John');
+ * // If valid: { ok: true, value: 'John', [RESULT_BRAND]: 'ok' }
  *
- * @param message - The error message to return if validation fails
- * @returns A validator function that returns a Result
+ * @example
+ * // With invalid input (empty string)
+ * const result = nonEmpty()('');
+ * // If invalid: { ok: false, error: [{ path: [], message: 'String must not be empty' }], [RESULT_BRAND]: 'error' }
+ *
+ * @example
+ * // With invalid input (only whitespace)
+ * const result = nonEmpty()('   ');
+ * // If invalid: { ok: false, error: [{ path: [], message: 'String must not be empty' }], [RESULT_BRAND]: 'error' }
+ *
+ * @example
+ * // With custom error message
+ * const requiredFieldValidator = nonEmpty('This field is required');
+ *
+ * @example
+ * // Used in an object schema with composition
+ * const userSchema = object({
+ *   name: required(composeRight(string(), nonEmpty()))
+ * });
  */
-export const isEmail = (message = "Invalid email address") => {
-  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-  return (value: string): Result<string, string> => {
-    if (!emailRegex.test(value)) {
-      return err(message);
+export function nonEmpty(message: string = "String must not be empty"): Validator<string> {
+  return (value, path = []) => {
+    if (value.trim().length === 0) {
+      return err([{ path, message }]);
     }
     return ok(value);
   };
-};
+}
 
 /**
- * URL validator
+ * Creates a validator that ensures a string is formatted as a valid email address.
+ * Uses a simple regular expression to validate basic email format.
+ *
+ * @param {string} [message='Invalid email format'] - Custom error message
+ * @returns {Validator<string>} A validator that checks if a string is a valid email
  *
  * @example
- * ```ts
- * // Website URL validation
- * pipe(
- *   ok<string, string>(websiteUrl),
- *   andThen(required("Website URL is required")),
- *   andThen(isUrl()),
- *   // other validations...
- * );
- * ```
+ * // Validate that a string is a valid email
+ * const emailValidator = email();
+ * const result = emailValidator('user@example.com');
+ * // If valid: { ok: true, value: 'user@example.com', [RESULT_BRAND]: 'ok' }
  *
- * @param message - The error message to return if validation fails
- * @returns A validator function that returns a Result
+ * @example
+ * // With invalid input
+ * const result = email()('not-an-email');
+ * // If invalid: { ok: false, error: [{ path: [], message: 'Invalid email format' }], [RESULT_BRAND]: 'error' }
+ *
+ * @example
+ * // With custom error message
+ * const contactEmailValidator = email('Please enter a valid email address');
+ *
+ * @example
+ * // Used in an object schema with composition
+ * const userSchema = object({
+ *   email: required(composeRight(string(), nonEmpty(), email()))
+ * });
  */
-export const isUrl = (message = "Invalid URL") => {
-  return (value: string): Result<string, string> => {
-    try {
-      new URL(value);
-      return ok(value);
-    } catch {
-      return err(message);
-    }
-  };
-};
+export function email(message: string = "Invalid email format"): Validator<string> {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return pattern(emailRegex, message);
+}
