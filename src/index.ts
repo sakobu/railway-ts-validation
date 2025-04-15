@@ -11,3 +11,4 @@ export * from "./string";
 export * from "./parsers";
 export * from "./date";
 export * from "./boolean";
+export * from "./union";
