@@ -1,6 +1,6 @@
 {
   "name": "@railway-ts/validation",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Validation library for built on top of @railway-ts/core",
   "type": "module",
   "main": "./dist/index.cjs",

@@ -271,6 +271,82 @@ const contactTypesValidator = selectionArray(
 );
 ```
 
+### Union Validators
+
+| Function                                                                                                    | Description                                                              |
+| ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `union<I, O>(validators: Array<Validator<I, O>>,`<br>`  options?: { collectAllErrors?: boolean })`          | Creates a validator that accepts values matching any provided validator  |
+| `discriminatedUnion<T>(discriminantField: string,`<br>`  validatorMap: Record<string, Validator>)`          | Creates a validator that selects schemas based on a discriminant field   |
+| `withCommonFields<C, S>(commonSchema: Validator<unknown, C>,`<br>`  specificSchema: Validator<unknown, S>)` | Combines shared fields with variant-specific fields in a union validator |
+
+```typescript
+// Basic union example - allowing different types
+const valueValidator = union([stringValidator, numberValidator, booleanValidator]);
+
+// Discriminated union example for message types
+const textMessageSchema = object({
+  type: stringEnum(["text"]),
+  content: required(string()),
+});
+
+const imageMessageSchema = object({
+  type: stringEnum(["image"]),
+  url: required(string()),
+  caption: optional(string()),
+});
+
+// Create a discriminated union validator using the 'type' field
+const messageValidator = discriminatedUnion<Message>("type", {
+  text: textMessageSchema,
+  image: imageMessageSchema,
+});
+
+// Common fields with discriminated union
+const commonFieldsSchema = object({
+  id: required(string()),
+  createdAt: required(parseDate()),
+});
+
+const completeMessageSchema = withCommonFields(commonFieldsSchema, messageValidator);
+
+// Usage
+const result = validate(messageData, completeMessageSchema);
+```
+
+#### Advanced Union Example
+
+```typescript
+// Define possible maneuver types
+type ManeuverType = "manual_burn" | "inclination_change" | "right_ascension_change";
+
+// Define schemas for each maneuver type
+const manualBurnSchema = object({
+  type: stringEnum<ManeuverType>(["manual_burn"]),
+  epoch: parseDate(),
+  Radial: composeRight(parseNumber(), between(-1000, 1000)),
+  InTrack: composeRight(parseNumber(), between(-1000, 1000)),
+  CrossTrack: composeRight(parseNumber(), between(-1000, 1000)),
+  Engine: stringEnum(["IMP", "RCS", "TCM"]),
+});
+
+const inclinationChangeSchema = object({
+  type: stringEnum<ManeuverType>(["inclination_change"]),
+  epoch: parseDate(),
+  Inclination: composeRight(parseNumber(), between(0, 180)),
+  Node: stringEnum(["Ascending", "Descending", "Optimal", "Next"]),
+  Engine: stringEnum(["IMP", "RCS", "TCM"]),
+});
+
+// Create a discriminated union
+const maneuverSchema = discriminatedUnion<Maneuver>("type", {
+  manual_burn: manualBurnSchema,
+  inclination_change: inclinationChangeSchema,
+});
+
+// Infer the type from the schema
+type Maneuver = InferSchemaType<typeof maneuverSchema>;
+```
+
 ### Parser Validators
 
 | Function                                               | Description                         |
